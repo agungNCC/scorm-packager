@@ -247,8 +247,8 @@ RUN CLEANUP EVERY 10 MINUTES
 */
 setInterval(cleanupTemp, 10 * 60 * 1000)
 
-app.listen(3000, () => {
+const PORT = 3333
 
-    console.log("Server running http://localhost:3000")
-
+app.listen(PORT, "0.0.0.0", () => {
+    console.log("Server running on port " + PORT)
 })
