@@ -125,7 +125,7 @@
 
         </div>
 
-        <div class="filename-input">
+        <div class="filename-input" id="filenameContainer" style="display:none;">
             <input id="outputName" type="text" placeholder="Input SCORM file-name">
         </div>
 
@@ -148,6 +148,7 @@
         const loader = document.getElementById("loader")
         const fileName = document.getElementById("fileName")
         const outputName = document.getElementById("outputName")
+        const filenameContainer = document.getElementById("filenameContainer")
 
         let uploadedFile = null
         let downloadBlob = null
@@ -159,6 +160,8 @@
             uploadedFile = e.target.files[0]
 
             fileName.innerText = uploadedFile.name
+
+            filenameContainer.style.display = "block"
 
             // ambil nama file tanpa .zip
             let baseName = uploadedFile.name.replace(/\.zip$/i, "")
@@ -188,6 +191,8 @@
             uploadedFile = e.dataTransfer.files[0]
 
             fileName.innerText = uploadedFile.name
+
+            filenameContainer.style.display = "block"
 
             let baseName = uploadedFile.name.replace(/\.zip$/i, "")
 
