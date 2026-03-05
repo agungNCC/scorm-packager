@@ -148,6 +148,12 @@
 
             fileName.innerText = uploadedFile.name
 
+            // ambil nama file tanpa .zip
+            let baseName = uploadedFile.name.replace(/\.zip$/i, "")
+
+            // set default nama output
+            outputName.value = baseName + ".zip"
+
             convertBtn.style.display = "inline-block"
 
         }
@@ -170,6 +176,10 @@
             uploadedFile = e.dataTransfer.files[0]
 
             fileName.innerText = uploadedFile.name
+
+            let baseName = uploadedFile.name.replace(/\.zip$/i, "")
+
+            outputName.value = baseName + ".zip"
 
             convertBtn.style.display = "inline-block"
 
@@ -204,6 +214,10 @@
         downloadBtn.onclick = () => {
 
             let filename = outputName.value.trim()
+
+            filename = filename
+                .replace(/\s+/g, "_")
+                .replace(/[^\w\-\.]/g, "")
 
             if (!filename.endsWith(".zip")) {
                 filename += ".zip"
