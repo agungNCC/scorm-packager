@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Bawana Scorm Packager</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f9;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+        }
+
+        .container {
+            text-align: center;
+        }
+
+        .logo {
+            width: 320px;
+            margin-bottom: 30px;
+        }
+
+        .drop-area {
+            width: 420px;
+            height: 220px;
+            border: 2px dashed #4a90e2;
+            border-radius: 12px;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .drop-area.dragover {
+            background: #eef5ff;
+            border-color: #2b6cb0;
+        }
+
+        .drop-text {
+            font-size: 18px;
+            color: #444;
+            margin-bottom: 10px;
+        }
+
+        .file-name {
+            font-size: 14px;
+            color: #888;
+        }
+
+        .filename-input {
+            margin-top: 20px;
+        }
+
+        .filename-input input {
+            padding: 8px 10px;
+            width: 260px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+        }
+
+        #outputName {
+            font-size: 16px;
+        }
+
+        button {
+            margin-top: 20px;
+            padding: 10px 22px;
+            border: none;
+            border-radius: 6px;
+            background: #4a90e2;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            display: none;
+        }
+
+        button:hover {
+            background: #2b6cb0;
+        }
+
+        .loader {
+            margin-top: 20px;
+            display: none;
+            font-size: 14px;
+            color: #666;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+
+        <img src="/logo.png" class="logo">
+
+        <div id="dropArea" class="drop-area">
+
+            <div class="drop-text">
+                Upload file zip disini
+            </div>
+
+            <div class="file-name" id="fileName"></div>
+
+            <input type="file" id="fileInput" hidden accept=".zip">
+
+        </div>
+
+        <div class="filename-input">
+            <input id="outputName" type="text" value="scorm_package.zip">
+        </div>
+
+        <button id="convertBtn">Convert</button>
+
+        <button id="downloadBtn">Download SCORM</button>
+
+        <div id="loader" class="loader">
+            Processing...
+        </div>
+
+    </div>
+
+    <script>
+
+        const dropArea = document.getElementById("dropArea")
+        const fileInput = document.getElementById("fileInput")
+        const convertBtn = document.getElementById("convertBtn")
+        const downloadBtn = document.getElementById("downloadBtn")
+        const loader = document.getElementById("loader")
+        const fileName = document.getElementById("fileName")
+        const outputName = document.getElementById("outputName")
+
+        let uploadedFile = null
+        let downloadBlob = null
+
+        dropArea.onclick = () => fileInput.click()
+
+        fileInput.onchange = e => {
+
+            uploadedFile = e.target.files[0]
+
+            fileName.innerText = uploadedFile.name
+
+            convertBtn.style.display = "inline-block"
+
+        }
+
+        dropArea.addEventListener("dragover", e => {
+            e.preventDefault()
+            dropArea.classList.add("dragover")
+        })
+
+        dropArea.addEventListener("dragleave", () => {
+            dropArea.classList.remove("dragover")
+        })
+
+        dropArea.addEventListener("drop", e => {
+
+            e.preventDefault()
+
+            dropArea.classList.remove("dragover")
+
+            uploadedFile = e.dataTransfer.files[0]
+
+            fileName.innerText = uploadedFile.name
+
+            convertBtn.style.display = "inline-block"
+
+        })
+
+        convertBtn.onclick = async () => {
+
+            if (!uploadedFile) return
+
+            convertBtn.style.display = "none"
+            loader.style.display = "block"
+
+            const form = new FormData()
+
+            form.append("file", uploadedFile)
+
+            const res = await fetch("/convert", {
+                method: "POST",
+                body: form
+            })
+
+            const blob = await res.blob()
+
+            downloadBlob = blob
+
+            loader.style.display = "none"
+
+            downloadBtn.style.display = "inline-block"
+
+        }
+
+        downloadBtn.onclick = () => {
+
+            let filename = outputName.value.trim()
+
+            if (!filename.endsWith(".zip")) {
+                filename += ".zip"
+            }
+
+            const url = window.URL.createObjectURL(downloadBlob)
+
+            const a = document.createElement("a")
+
+            a.href = url
+
+            a.download = filename
+
+            a.click()
+
+        }
+
+    </script>
+
+</body>
+
+</html>

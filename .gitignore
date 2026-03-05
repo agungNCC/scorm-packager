@@ -1,0 +1,6 @@
+node_modules
+uploads
+extracted
+output
+.env
+.DS_Store
