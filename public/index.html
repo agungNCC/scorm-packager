@@ -112,16 +112,15 @@
         <h1 class="title">SCORM-PACKAGER</h1>
 
         <div id="dropArea" class="drop-area">
-
             <div class="drop-text">
-                Drag & drop your Genially ZIP file here
+                Drop your PDF or Genially ZIP file here
                 <br>
-                <small>or click to browse</small>
+                <small>click to browse</small>
             </div>
 
             <div class="file-name" id="fileName"></div>
 
-            <input type="file" id="fileInput" hidden accept=".zip">
+            <input type="file" id="fileInput" hidden accept=".zip,.pdf,application/pdf,application/zip">
 
         </div>
 
@@ -163,8 +162,7 @@
 
             filenameContainer.style.display = "block"
 
-            // ambil nama file tanpa .zip
-            let baseName = uploadedFile.name.replace(/\.zip$/i, "")
+            let baseName = uploadedFile.name.replace(/\.(zip|pdf)$/i, "")
 
             // set default nama output
             outputName.value = baseName + ".zip"
@@ -194,7 +192,7 @@
 
             filenameContainer.style.display = "block"
 
-            let baseName = uploadedFile.name.replace(/\.zip$/i, "")
+            let baseName = uploadedFile.name.replace(/\.(zip|pdf)$/i, "")
 
             outputName.value = baseName + ".zip"
 
@@ -217,6 +215,14 @@
                 method: "POST",
                 body: form
             })
+
+            if (!res.ok) {
+                const msg = await res.text()
+                loader.style.display = "none"
+                convertBtn.style.display = "inline-block"
+                alert(msg || "Gagal memproses file")
+                return
+            }
 
             const blob = await res.blob()
 

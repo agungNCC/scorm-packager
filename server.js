@@ -3,11 +3,59 @@ const multer = require("multer")
 const unzipper = require("unzipper")
 const archiver = require("archiver")
 const fs = require("fs-extra")
+const fsp = require("fs").promises
 const path = require("path")
 
 const app = express()
 
 app.use(express.static("public"))
+
+const pdfjsPackageRoot = path.dirname(require.resolve("pdfjs-dist/package.json"))
+const pdfjsBuildDir = path.join(pdfjsPackageRoot, "build")
+
+const pageFlipPackageRoot = path.dirname(require.resolve("page-flip/package.json"))
+const pageFlipBrowserJs = path.join(pageFlipPackageRoot, "dist", "js", "page-flip.browser.js")
+
+function isPdfUpload(file) {
+    const name = (file && file.originalname) ? file.originalname.toLowerCase() : ""
+    const mt = (file && file.mimetype) ? file.mimetype.toLowerCase() : ""
+    return name.endsWith(".pdf") || mt === "application/pdf"
+}
+
+function isZipUpload(file) {
+    const name = (file && file.originalname) ? file.originalname.toLowerCase() : ""
+    const mt = (file && file.mimetype) ? file.mimetype.toLowerCase() : ""
+    return name.endsWith(".zip") || mt === "application/zip" || mt === "application/x-zip-compressed"
+}
+
+/**
+ * Detect real file type from content. Browsers often send PDF as application/octet-stream
+ * or users may use wrong extension — avoids feeding PDF bytes to unzipper (invalid signature %PDF).
+ */
+async function sniffUploadKind(filePath) {
+    const buf = Buffer.alloc(8)
+    const fh = await fsp.open(filePath, "r")
+    try {
+        const { bytesRead } = await fh.read(buf, 0, 8, 0)
+        if (bytesRead < 4) return null
+    } finally {
+        await fh.close()
+    }
+
+    if (buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46) {
+        return "pdf"
+    }
+
+    const zipSig2 = buf[2]
+    const zipSig3 = buf[3]
+    if (buf[0] === 0x50 && buf[1] === 0x4B) {
+        if (zipSig2 === 0x03 && zipSig3 === 0x04) return "zip"
+        if (zipSig2 === 0x05 && zipSig3 === 0x06) return "zip"
+        if (zipSig2 === 0x07 && zipSig3 === 0x08) return "zip"
+    }
+
+    return null
+}
 
 /*
 UPLOAD CONFIG
@@ -17,6 +65,21 @@ const upload = multer({
     dest: "uploads/",
     limits: {
         fileSize: 200 * 1024 * 1024
+    },
+    fileFilter(req, file, cb) {
+        const mt = (file.mimetype || "").toLowerCase()
+        const looseBinary =
+            mt === "application/octet-stream" ||
+            mt === "binary/octet-stream" ||
+            mt === ""
+
+        if (isPdfUpload(file) || isZipUpload(file) || looseBinary) {
+            cb(null, true)
+        } else {
+            const e = new Error("INVALID_TYPE")
+            e.code = "INVALID_TYPE"
+            cb(e)
+        }
     }
 })
 
@@ -132,9 +195,82 @@ function generateManifest(entry) {
 `
 }
 
+async function buildPdfFlipbookScorm(uploadedPath, extractPath) {
+
+    await fs.copy(uploadedPath, path.join(extractPath, "document.pdf"))
+
+    await fs.copy(path.join(pdfjsBuildDir, "pdf.min.mjs"), path.join(extractPath, "pdf.min.mjs"))
+    await fs.copy(path.join(pdfjsBuildDir, "pdf.worker.min.mjs"), path.join(extractPath, "pdf.worker.min.mjs"))
+
+    await fs.copy(pageFlipBrowserJs, path.join(extractPath, "page-flip.browser.js"))
+
+    await fs.copy("templates/flipbook-index.html", path.join(extractPath, "index.html"))
+    await fs.copy("templates/flipbook-stpageflip.css", path.join(extractPath, "flipbook-stpageflip.css"))
+    await fs.copy("templates/flipbook-stpageflip.mjs", path.join(extractPath, "flipbook-stpageflip.mjs"))
+
+    await fs.copy("templates/scorm.js", path.join(extractPath, "scorm.js"))
+    await fs.copy("templates/SCORM_API_wrapper.min.js", path.join(extractPath, "SCORM_API_wrapper.min.js"))
+
+    await fs.writeFile(path.join(extractPath, "imsmanifest.xml"), generateManifest("index.html").trim())
+
+}
+
+async function buildGeniallyZipScorm(uploadedPath, extractPath) {
+
+    try {
+        await fs.createReadStream(uploadedPath)
+            .pipe(unzipper.Extract({ path: extractPath }))
+            .promise()
+    } catch (zipErr) {
+        console.error(zipErr)
+        const hint =
+            "File bukan arsip ZIP yang valid. Jika Anda mengunggah PDF, pastikan berkas ber-ekstensi .pdf."
+        const err = new Error(hint)
+        err.code = "BAD_ZIP"
+        throw err
+    }
+
+    const entry = findEntryHtml(extractPath)
+
+    if (!entry) {
+        const err = new Error("No HTML entry found")
+        err.code = "NO_HTML"
+        throw err
+    }
+
+    const htmlPath = path.join(extractPath, entry)
+
+    await injectSCORM(htmlPath)
+
+    await fs.writeFile(path.join(extractPath, "imsmanifest.xml"), generateManifest(entry).trim())
+    await fs.copy("templates/scorm.js", path.join(extractPath, "scorm.js"))
+    await fs.copy("templates/SCORM_API_wrapper.min.js", path.join(extractPath, "SCORM_API_wrapper.min.js"))
+
+}
+
+/** @returns {Promise<string|null>} error message or null if ok */
+async function runGeniallyZipWithErrors(uploadedPath, extractPath) {
+    try {
+        await buildGeniallyZipScorm(uploadedPath, extractPath)
+        return null
+    } catch (e) {
+        if (e.code === "BAD_ZIP") {
+            return e.message
+        }
+        if (e.code === "NO_HTML") {
+            return "No HTML entry found"
+        }
+        throw e
+    }
+}
+
 app.post("/convert", upload.single("file"), async (req, res) => {
 
     try {
+
+        if (!req.file) {
+            return res.status(400).send("No file uploaded")
+        }
 
         const id = generateId()
 
@@ -147,23 +283,35 @@ app.post("/convert", upload.single("file"), async (req, res) => {
 
         await fs.ensureDir(extractPath)
 
-        await fs.createReadStream(req.file.path)
-            .pipe(unzipper.Extract({ path: extractPath }))
-            .promise()
+        const sniffed = await sniffUploadKind(req.file.path)
 
-        const entry = findEntryHtml(extractPath)
+        if (sniffed === "pdf") {
 
-        if (!entry) {
-            return res.status(400).send("No HTML entry found")
+            await buildPdfFlipbookScorm(req.file.path, extractPath)
+
+        } else if (sniffed === "zip") {
+
+            const zipErr = await runGeniallyZipWithErrors(req.file.path, extractPath)
+            if (zipErr) {
+                return res.status(400).send(zipErr)
+            }
+
+        } else if (isPdfUpload(req.file)) {
+
+            await buildPdfFlipbookScorm(req.file.path, extractPath)
+
+        } else if (isZipUpload(req.file)) {
+
+            const zipErr = await runGeniallyZipWithErrors(req.file.path, extractPath)
+            if (zipErr) {
+                return res.status(400).send(zipErr)
+            }
+
+        } else {
+            return res.status(400).send(
+                "Tipe file tidak dikenali. Unggah PDF (flipbook) atau ZIP export Genially."
+            )
         }
-
-        const htmlPath = path.join(extractPath, entry)
-
-        await injectSCORM(htmlPath)
-
-        await fs.copy("templates/imsmanifest.xml", `${extractPath}/imsmanifest.xml`)
-        await fs.copy("templates/scorm.js", `${extractPath}/scorm.js`)
-        await fs.copy("templates/SCORM_API_wrapper.min.js", `${extractPath}/SCORM_API_wrapper.min.js`)
 
         const output = fs.createWriteStream(outputZip)
 
@@ -173,18 +321,21 @@ app.post("/convert", upload.single("file"), async (req, res) => {
 
         archive.directory(extractPath, false)
 
-        await archive.finalize()
-
-        output.on("close", () => {
-
-            res.download(outputZip)
-
+        const outputClosed = new Promise((resolve, reject) => {
+            output.once("close", resolve)
+            output.once("error", reject)
+            archive.once("error", reject)
         })
+
+        await archive.finalize()
+        await outputClosed
+
+        res.download(outputZip)
 
     } catch (err) {
 
-        console.error(err)
-        res.status(500).send("Conversion failed")
+        console.error("CONVERT ERROR:", err && err.stack ? err.stack : err);
+        res.status(500).send("Conversion failed: " + (err && err.message ? err.message : String(err)))
 
     }
 
@@ -197,6 +348,10 @@ app.use((err, req, res, next) => {
 
     if (err.code === "LIMIT_FILE_SIZE") {
         return res.status(400).send("File terlalu besar. Maksimal 200MB.")
+    }
+
+    if (err.code === "INVALID_TYPE") {
+        return res.status(400).send("Hanya file PDF atau ZIP yang didukung.")
     }
 
     next(err)
