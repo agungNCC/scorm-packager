@@ -5,6 +5,7 @@ if (scorm) scorm.version = "1.2";
 var initiated = false;
 var dtmSessionTime = new Date();
 var lessonStatus = "";
+var prevTime = 0;
 
 function safeNumber(v, f = 0) { const n = Number(v); return Number.isFinite(n) ? n : f; }
 function msToCMIDuration(n) {
@@ -54,7 +55,9 @@ function Initializing() {
 
     if (success) {
         lessonStatus = scorm.get("cmi.core.lesson_status") || "incomplete";
-        prevTime = maxWatchedTime;
+        // Restore last known location if available (avoid undefined globals).
+        const loc = scorm.get("cmi.core.lesson_location");
+        prevTime = safeNumber(loc, 0);
         if (lessonStatus === 'completed' || lessonStatus === 'passed') { lessonStatus = 'completed'; }
 
     }
