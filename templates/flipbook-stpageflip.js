@@ -1,6 +1,6 @@
-import * as pdfjsLib from "./pdf.min.mjs";
+import * as pdfjsLib from "./pdf.min.js";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("./pdf.worker.min.mjs", import.meta.url).href;
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("./pdf.worker.min.js", import.meta.url).href;
 
 const PDF_SRC = new URL("./document.pdf", import.meta.url).href;
 
@@ -8,7 +8,7 @@ const PDF_SRC = new URL("./document.pdf", import.meta.url).href;
  * Konfigurasi warna (bisa Anda ubah manual).
  *
  * Cara pakai:
- * - Buka `flipbook-stpageflip.mjs` di zip SCORM hasil konversi
+ * - Buka `flipbook-stpageflip.js` di zip SCORM hasil konversi
  * - Ubah nilai `FLIPBOOK_THEME` di bawah ini
  */
 const FLIPBOOK_THEME = {
@@ -192,7 +192,6 @@ async function start() {
             width: bookW,
             height: bookH,
             size: "stretch",
-            // Landscape mobile (mis. 780x360) butuh bisa mengecil, kalau minHeight terlalu besar akan terpotong.
             minWidth: 220,
             maxWidth: 2000,
             minHeight: 220,
@@ -269,3 +268,4 @@ async function start() {
 window.addEventListener("load", () => {
     window.setTimeout(start, 320);
 });
+
