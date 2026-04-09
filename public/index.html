@@ -118,10 +118,162 @@
             border-radius: 5px;
             transition: width 0.3s ease;
         }
+
+        .help-btn {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #4a90e2;
+            color: #fff;
+            font-size: 20px;
+            font-weight: 700;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,.15);
+            z-index: 1000;
+            margin: 0;
+            padding: 0;
+        }
+
+        .help-btn:hover {
+            background: #2b6cb0;
+        }
+
+        .help-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,.45);
+            z-index: 1001;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .help-overlay.open {
+            display: flex;
+        }
+
+        .help-popup {
+            background: #fff;
+            border-radius: 12px;
+            padding: 32px 36px;
+            max-width: 480px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            position: relative;
+            box-shadow: 0 8px 32px rgba(0,0,0,.2);
+        }
+
+        .help-popup h2 {
+            margin: 0 0 6px;
+            font-size: 20px;
+            color: #333;
+        }
+
+        .help-popup .version {
+            font-size: 13px;
+            color: #999;
+            margin-bottom: 16px;
+        }
+
+        .help-popup p {
+            font-size: 14px;
+            color: #555;
+            line-height: 1.6;
+            margin: 0 0 14px;
+        }
+
+        .help-popup h3 {
+            font-size: 15px;
+            color: #333;
+            margin: 18px 0 8px;
+        }
+
+        .help-popup ul {
+            padding-left: 20px;
+            margin: 0 0 14px;
+        }
+
+        .help-popup li {
+            font-size: 14px;
+            color: #555;
+            line-height: 1.7;
+        }
+
+        .help-popup ol {
+            padding-left: 20px;
+            margin: 0 0 14px;
+        }
+
+        .help-popup ol li {
+            margin-bottom: 4px;
+        }
+
+        .help-popup .copyright {
+            text-align: center;
+            font-size: 12px;
+            color: #aaa;
+            margin-top: 20px;
+            padding-top: 14px;
+            border-top: 1px solid #eee;
+        }
+
+        .help-close {
+            position: absolute;
+            top: 12px;
+            right: 14px;
+            background: none;
+            border: none;
+            font-size: 22px;
+            color: #999;
+            cursor: pointer;
+            padding: 0;
+            margin: 0;
+            line-height: 1;
+            display: block;
+        }
+
+        .help-close:hover {
+            color: #333;
+        }
     </style>
 </head>
 
 <body>
+
+    <button class="help-btn" id="helpBtn" title="Help">?</button>
+
+    <div class="help-overlay" id="helpOverlay">
+        <div class="help-popup">
+            <button class="help-close" id="helpClose">&times;</button>
+            <h2>Bawana SCORM Packager v1.0</h2>
+            <p>Aplikasi untuk mengkonversi file PDF dan file hasil publish-an Genially menjadi paket SCORM 1.2 yang siap diunggah ke LMS.</p>
+
+            <h3>Fitur</h3>
+            <ul>
+                <li><strong>Konversi Genially ke SCORM</strong> — Upload file ZIP hasil publish Genially</li>
+                <li><strong>Konversi PDF ke SCORM Flipbook</strong> — Upload file PDF, tampil dengan efek flipbook interaktif</li>
+            </ul>
+
+            <h3>Langkah Penggunaan</h3>
+            <ol>
+                <li><strong>Upload File</strong> — PDF atau ZIP (drag &amp; drop atau klik)</li>
+                <li><strong>Convert</strong> — Klik tombol Process untuk memulai konversi, progress ditampilkan real-time</li>
+                <li><strong>Nama File SCORM</strong> (opsional) — Isi kolom Output Name, atau biarkan dengan nama default</li>
+                <li><strong>Download</strong> — Klik Download untuk mendapat file SCORM (.zip)</li>
+            </ol>
+            <p>File SCORM siap diunggah ke LMS.</p>
+
+            <div class="copyright">&copy; 2026 Bawana</div>
+        </div>
+    </div>
 
     <div class="container">
 
@@ -160,6 +312,16 @@
     </div>
 
     <script>
+
+        const helpBtn = document.getElementById("helpBtn")
+        const helpOverlay = document.getElementById("helpOverlay")
+        const helpClose = document.getElementById("helpClose")
+
+        helpBtn.onclick = () => helpOverlay.classList.add("open")
+        helpClose.onclick = () => helpOverlay.classList.remove("open")
+        helpOverlay.onclick = (e) => {
+            if (e.target === helpOverlay) helpOverlay.classList.remove("open")
+        }
 
         const dropArea = document.getElementById("dropArea")
         const fileInput = document.getElementById("fileInput")
