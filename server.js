@@ -34,8 +34,8 @@ async function readFlipbookThemePageBg() {
     if (m && m[1]) {
         return m[1].trim()
     }
-    console.warn("flipbook-init.js: pageBg tidak terbaca, fallback #000000")
-    return "#000000"
+    console.warn("flipbook-init.js: pageBg tidak terbaca, fallback #333333")
+    return "#333333"
 }
 
 /**
@@ -48,6 +48,28 @@ function patchPageFlipBrowserJsSource(js, canvasClearColor) {
         .replaceAll("t.fillStyle=\"rgb(255, 255, 255)\"", `t.fillStyle="${c}"`)
 }
 
+const coverTemplatePath = path.join(__dirname, "templates", "cover.pdf")
+
+async function renderCoverPage(pdfjs, createCanvas, coverPdf, targetW, targetH, pageBg) {
+    const page = await coverPdf.getPage(1)
+    const canvas = createCanvas(targetW, targetH)
+    const ctx = canvas.getContext("2d")
+    const base = page.getViewport({ scale: 1 })
+    const scale = Math.min(targetW / base.width, targetH / base.height)
+    const viewport = page.getViewport({ scale })
+    const offX = Math.round((targetW - viewport.width) / 2)
+    const offY = Math.round((targetH - viewport.height) / 2)
+    ctx.fillStyle = pageBg
+    ctx.fillRect(0, 0, targetW, targetH)
+    await page.render({
+        canvasContext: ctx,
+        viewport,
+        background: pageBg,
+        transform: [1, 0, 0, 1, offX, offY],
+    }).promise
+    return canvas.toBuffer("image/png")
+}
+
 async function renderPdfToImages(extractPath, pageBg, onProgress) {
 
     const pdfPath = path.join(extractPath, "document.pdf")
@@ -57,18 +79,36 @@ async function renderPdfToImages(extractPath, pageBg, onProgress) {
     const buf = await fs.readFile(pdfPath)
     const data = new Uint8Array(buf)
 
-    // pdfjs-dist is ESM (.mjs); use dynamic import from CJS.
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs")
     const { createCanvas } = require("@napi-rs/canvas")
 
     const loadingTask = pdfjs.getDocument({ data, disableWorker: true })
     const pdf = await loadingTask.promise
 
-    const pageFiles = []
+    const contentPages = pdf.numPages
+    const needBackCover = contentPages % 2 === 0
+
+    const firstPage = await pdf.getPage(1)
+    const firstBase = firstPage.getViewport({ scale: 1 })
     const targetLongPx = 1600
+    const firstScale = Math.min(targetLongPx / Math.max(firstBase.width, firstBase.height), 3)
+    const coverW = Math.ceil(firstBase.width * firstScale)
+    const coverH = Math.ceil(firstBase.height * firstScale)
 
-    for (let i = 1; i <= pdf.numPages; i++) {
+    const coverBuf = await fs.readFile(coverTemplatePath)
+    const coverData = new Uint8Array(coverBuf)
+    const coverPdf = await (pdfjs.getDocument({ data: coverData, disableWorker: true })).promise
 
+    const allFiles = []
+    let fileIdx = 0
+
+    if (onProgress) onProgress(10, "Rendering cover…")
+    const frontCoverPng = await renderCoverPage(pdfjs, createCanvas, coverPdf, coverW, coverH, pageBg)
+    const frontName = `p${String(++fileIdx).padStart(4, "0")}.png`
+    await fs.writeFile(path.join(pagesDir, frontName), frontCoverPng)
+    allFiles.push(`pages/${frontName}`)
+
+    for (let i = 1; i <= contentPages; i++) {
         const page = await pdf.getPage(i)
         const base = page.getViewport({ scale: 1 })
         const scale = Math.min(targetLongPx / Math.max(base.width, base.height), 3)
@@ -83,20 +123,31 @@ async function renderPdfToImages(extractPath, pageBg, onProgress) {
             background: pageBg,
         }).promise
 
-        const name = `p${String(i).padStart(4, "0")}.png`
-        const outPath = path.join(pagesDir, name)
-        await fs.writeFile(outPath, canvas.toBuffer("image/png"))
-
-        pageFiles.push(`pages/${name}`)
+        const name = `p${String(++fileIdx).padStart(4, "0")}.png`
+        await fs.writeFile(path.join(pagesDir, name), canvas.toBuffer("image/png"))
+        allFiles.push(`pages/${name}`)
 
         if (onProgress) {
-            const pct = Math.round(10 + (i / pdf.numPages) * 75)
-            onProgress(pct, `Rendering page ${i}/${pdf.numPages}`)
+            const pct = Math.round(12 + (i / contentPages) * 73)
+            onProgress(pct, `Rendering page ${i}/${contentPages}`)
         }
     }
 
-    // Generate a simple JS file to avoid fetch/XHR (works in strict LMS).
-    const pagesJs = `window.FLIPBOOK_PAGES = ${JSON.stringify(pageFiles)};\n`
+    if (needBackCover) {
+        if (onProgress) onProgress(86, "Rendering back cover…")
+        const backCoverPng = await renderCoverPage(pdfjs, createCanvas, coverPdf, coverW, coverH, pageBg)
+        const backName = `p${String(++fileIdx).padStart(4, "0")}.png`
+        await fs.writeFile(path.join(pagesDir, backName), backCoverPng)
+        allFiles.push(`pages/${backName}`)
+    }
+
+    // metadata: contentPages + whether back cover exists, so client can skip covers
+    const pagesJs = [
+        `window.FLIPBOOK_PAGES = ${JSON.stringify(allFiles)};`,
+        `window.FLIPBOOK_CONTENT_COUNT = ${contentPages};`,
+        `window.FLIPBOOK_HAS_BACK_COVER = ${needBackCover};`,
+        "",
+    ].join("\n")
     await fs.writeFile(path.join(extractPath, "flipbook-pages.js"), pagesJs)
 
 }

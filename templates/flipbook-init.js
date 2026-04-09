@@ -1,27 +1,18 @@
-/* global St, FLIPBOOK_PAGES */
+/* global St, FLIPBOOK_PAGES, FLIPBOOK_CONTENT_COUNT, FLIPBOOK_HAS_BACK_COVER */
 
 (function () {
     "use strict";
-
-    // =========================
-    // THEME CONFIG (edit manual)
-    // pageBg = latar halaman + warna dasar PDF→PNG + patch kanvas page-flip (server membaca nilai ini dari file ini).
-    // completeAtRatio = selesai SCORM setelah peserta pernah mencapai halaman ke-N (N = ceil(ratio * jumlah halaman)).
-    // Bookmark SCORM: cmi.core.lesson_location disetel ke halaman terakhir yang terlihat (simpan + resume).
-    // =========================
-    /** Selaraskan dengan opsi showCover di St.PageFlip di bawah */
-    var FLIPBOOK_SHOW_COVER = true;
 
     var FLIPBOOK_THEME = {
         headerBg: "#0a2540",
         footerBg: "#0a2540",
         appBg: "#0d1b2a",
-        stageBgTop: "#000000",
-        stageBgBottom: "#000000",
+        stageBgTop: "#333333",
+        stageBgBottom: "#333333",
         overlayBg: "rgba(10, 37, 64, 0.55)",
         text: "#e8eef5",
         indicator: "#b8d4f0",
-        pageBg: "#000000",
+        pageBg: "#333333",
         completeAtRatio: 0.7,
     };
 
@@ -47,9 +38,10 @@
     var btnLast = document.getElementById("btnLast");
 
     var pageFlip = null;
-    var pageCount = 0;
+    var totalImages = 0;
+    var contentCount = 0;
+    var hasBackCover = false;
     var completedSent = false;
-    /** Halaman tertinggi yang pernah dikunjungi (untuk completion %) */
     var maxPageVisited = 1;
 
     function setLoading(on) {
@@ -83,7 +75,7 @@
     function completionThresholdPage() {
         var r = FLIPBOOK_THEME.completeAtRatio;
         if (typeof r !== "number" || r <= 0 || r > 1) r = 0.7;
-        return Math.max(1, Math.ceil(pageCount * r));
+        return Math.max(1, Math.ceil(contentCount * r));
     }
 
     function maybeMarkCompleted(highestVisitedOneBased) {
@@ -96,18 +88,27 @@
         }
     }
 
-    function maxLeftPageIndex() {
-        if (pageCount < 1) return 0;
-        return pageCount % 2 === 1 ? pageCount - 1 : pageCount - 2;
+    // Image index 0 = front cover, content starts at index 1
+    function imgIdxToContentPage(idx) {
+        return idx; // idx 1 → content page 1, idx 2 → page 2, etc.
+    }
+
+    function contentPageToImgIdx(p) {
+        return p; // content page 1 → idx 1
+    }
+
+    function maxImageIndex() {
+        if (totalImages < 1) return 0;
+        return totalImages % 2 === 0 ? totalImages - 2 : totalImages - 1;
+    }
+
+    function isPortrait() {
+        return pageFlip && pageFlip.getOrientation() === "portrait";
     }
 
     function recenterBook() {
-        try {
-            if (pageFlip) pageFlip.update();
-        } catch (_) { }
-        try {
-            updateIndicatorAndNav();
-        } catch (_) { }
+        try { if (pageFlip) pageFlip.update(); } catch (_) { }
+        try { updateIndicatorAndNav(); } catch (_) { }
     }
 
     function scheduleRecenter(delay) {
@@ -118,39 +119,51 @@
         if (!pageFlip) return;
         var idx = pageFlip.getCurrentPageIndex();
         var orient = pageFlip.getOrientation();
-        var label = "";
 
+        var contentL, contentR;
         if (orient === "portrait") {
-            label = String(idx + 1) + "/" + String(pageCount);
-        } else if (FLIPBOOK_SHOW_COVER && idx === 0) {
-            label = "1/" + String(pageCount);
+            contentL = imgIdxToContentPage(idx);
+            contentR = null;
         } else {
-            var l = idx + 1;
-            var r = idx + 2 <= pageCount ? idx + 2 : null;
-            label = r ? (String(l) + "-" + String(r) + "/" + String(pageCount)) : (String(l) + "/" + String(pageCount));
+            contentL = imgIdxToContentPage(idx);
+            contentR = idx + 1 < totalImages ? imgIdxToContentPage(idx + 1) : null;
         }
 
+        // Clamp to content range (1..contentCount), skip covers
+        if (contentL < 1) contentL = null;
+        if (contentL > contentCount) contentL = null;
+        if (contentR !== null && (contentR < 1 || contentR > contentCount)) contentR = null;
+
+        var label = "";
+        if (contentL && contentR) {
+            label = String(contentL) + "-" + String(contentR) + "/" + String(contentCount);
+        } else if (contentL) {
+            label = String(contentL) + "/" + String(contentCount);
+        } else if (contentR) {
+            label = String(contentR) + "/" + String(contentCount);
+        } else {
+            label = "—";
+        }
         if (pageIndicator) pageIndicator.textContent = label;
 
-        var atFirst = idx <= 0;
-        var atLast = orient === "portrait" ? idx >= pageCount - 1 : idx >= maxLeftPageIndex();
+        var atFirst, atLast;
+        if (orient === "portrait") {
+            atFirst = idx <= 1;
+            atLast = idx >= contentCount;
+        } else {
+            atFirst = idx <= 0;
+            atLast = idx >= maxImageIndex();
+        }
         if (btnFirst) btnFirst.disabled = atFirst;
         if (btnPrev) btnPrev.disabled = atFirst;
         if (btnNext) btnNext.disabled = atLast;
         if (btnLast) btnLast.disabled = atLast;
 
-        var visMax;
-        if (orient === "portrait") {
-            visMax = idx + 1;
-        } else if (FLIPBOOK_SHOW_COVER && idx === 0) {
-            visMax = 1;
-        } else if (pageCount % 2 === 1 && idx === pageCount - 1) {
-            visMax = pageCount;
-        } else {
-            visMax = Math.min(idx + 2, pageCount);
-        }
+        var visMax = 0;
+        if (contentL) visMax = contentL;
+        if (contentR && contentR > visMax) visMax = contentR;
         if (visMax > maxPageVisited) maxPageVisited = visMax;
-        saveBookmark(visMax);
+        if (visMax > 0) saveBookmark(visMax);
         maybeMarkCompleted(maxPageVisited);
     }
 
@@ -172,10 +185,26 @@
         var el = document.getElementById("flipbook");
         if (!el) return;
 
-        pageCount = window.FLIPBOOK_PAGES.length;
+        totalImages = window.FLIPBOOK_PAGES.length;
+        contentCount = window.FLIPBOOK_CONTENT_COUNT || (totalImages - 1);
+        hasBackCover = !!window.FLIPBOOK_HAS_BACK_COVER;
 
-        var startIdx = Math.min(Math.max(0, readBookmark() - 1), pageCount - 1);
-        maxPageVisited = Math.max(1, startIdx + 1);
+        var bookmark = readBookmark();
+        var startIdx;
+        var orient = window.innerWidth > window.innerHeight ? "landscape" : "portrait";
+
+        if (orient === "portrait") {
+            startIdx = contentPageToImgIdx(Math.min(Math.max(1, bookmark), contentCount));
+        } else {
+            startIdx = 0;
+            if (bookmark > 1) {
+                var bmIdx = contentPageToImgIdx(Math.min(bookmark, contentCount));
+                startIdx = bmIdx % 2 === 0 ? bmIdx - 1 : bmIdx;
+                if (startIdx < 0) startIdx = 0;
+            }
+        }
+
+        maxPageVisited = Math.max(1, bookmark);
 
         pageFlip = new St.PageFlip(el, {
             width: 480,
@@ -185,7 +214,7 @@
             maxWidth: 2000,
             minHeight: 220,
             maxHeight: 1600,
-            showCover: FLIPBOOK_SHOW_COVER,
+            showCover: false,
             mobileScrollSupport: false,
             startPage: startIdx,
             flippingTime: 1050,
@@ -207,23 +236,68 @@
         window.setTimeout(nudgeFlipbookLayout, 350);
 
         pageFlip.on("flip", updateIndicatorAndNav);
-        pageFlip.on("changeOrientation", updateIndicatorAndNav);
         pageFlip.on("changeOrientation", function () {
+            var orient = pageFlip.getOrientation();
+            var idx = pageFlip.getCurrentPageIndex();
+
+            if (orient === "portrait") {
+                // In portrait, skip covers — jump to nearest content page
+                if (idx < 1) {
+                    pageFlip.turnToPage(1);
+                } else if (idx > contentCount) {
+                    pageFlip.turnToPage(contentCount);
+                }
+            }
+            updateIndicatorAndNav();
             scheduleRecenter(0);
             scheduleRecenter(80);
         });
 
-        if (btnFirst) btnFirst.addEventListener("click", function () { pageFlip && pageFlip.turnToPage(0); });
-        if (btnPrev) btnPrev.addEventListener("click", function () { pageFlip && pageFlip.flipPrev("top"); });
-        if (btnNext) btnNext.addEventListener("click", function () { pageFlip && pageFlip.flipNext("top"); });
-        if (btnLast) btnLast.addEventListener("click", function () { pageFlip && pageFlip.turnToPage(maxLeftPageIndex()); });
+        // Navigation: portrait skips covers
+        if (btnFirst) btnFirst.addEventListener("click", function () {
+            if (!pageFlip) return;
+            pageFlip.turnToPage(isPortrait() ? 1 : 0);
+        });
+        if (btnPrev) btnPrev.addEventListener("click", function () {
+            if (!pageFlip) return;
+            var idx = pageFlip.getCurrentPageIndex();
+            if (isPortrait() && idx <= 1) return;
+            pageFlip.flipPrev("top");
+        });
+        if (btnNext) btnNext.addEventListener("click", function () {
+            if (!pageFlip) return;
+            var idx = pageFlip.getCurrentPageIndex();
+            if (isPortrait() && idx >= contentCount) return;
+            pageFlip.flipNext("top");
+        });
+        if (btnLast) btnLast.addEventListener("click", function () {
+            if (!pageFlip) return;
+            if (isPortrait()) {
+                pageFlip.turnToPage(contentCount);
+            } else {
+                pageFlip.turnToPage(maxImageIndex());
+            }
+        });
 
         document.body.addEventListener("keydown", function (e) {
             if (!pageFlip) return;
-            if (e.key === "Home") pageFlip.turnToPage(0);
-            if (e.key === "End") pageFlip.turnToPage(maxLeftPageIndex());
-            if (e.key === "ArrowLeft") { e.preventDefault(); pageFlip.flipPrev("top"); }
-            if (e.key === "ArrowRight") { e.preventDefault(); pageFlip.flipNext("top"); }
+            var idx = pageFlip.getCurrentPageIndex();
+            if (e.key === "Home") {
+                pageFlip.turnToPage(isPortrait() ? 1 : 0);
+            }
+            if (e.key === "End") {
+                pageFlip.turnToPage(isPortrait() ? contentCount : maxImageIndex());
+            }
+            if (e.key === "ArrowLeft") {
+                e.preventDefault();
+                if (isPortrait() && idx <= 1) return;
+                pageFlip.flipPrev("top");
+            }
+            if (e.key === "ArrowRight") {
+                e.preventDefault();
+                if (isPortrait() && idx >= contentCount) return;
+                pageFlip.flipNext("top");
+            }
         });
 
         window.addEventListener("orientationchange", function () {
@@ -243,4 +317,3 @@
         setTimeout(start, 250);
     });
 })();
-
