@@ -1,3 +1,5 @@
+require("dotenv").config()
+
 const express = require("express")
 const multer = require("multer")
 const unzipper = require("unzipper")
@@ -641,7 +643,7 @@ RUN CLEANUP EVERY 10 MINUTES
 */
 setInterval(cleanupTemp, 10 * 60 * 1000)
 
-const PORT = 3333
+const PORT = process.env.PORT || 3333
 
 app.listen(PORT, "0.0.0.0", () => {
     console.log("Server running on port " + PORT)
